@@ -1,0 +1,106 @@
+{
+  "project": {
+    "name": "Mandiri Sejahtera Inventory Management",
+    "language": "id-ID",
+    "context": "hybrid_fullstack_dashboard",
+    "audience": ["pemilik distributor", "admin gudang", "sales", "operator inventory"],
+    "theme": "light-first",
+    "emotional_goal": "tenang, presisi, dapat dipercaya, siap bertindak",
+    "success_actions": ["menemukan SKU dengan cepat", "mencatat barang masuk tanpa kesalahan", "membuat penjualan yang memvalidasi stok", "mendeteksi stok menipis dan margin"],
+    "storage_note": "Excel adalah sumber data utama pada versi pertama; UI harus jujur memberi label sinkronisasi/import/export bila backend belum real-time."
+  },
+  "discovery": {
+    "information_architecture": ["Dashboard", "Produk", "Barang Masuk", "Penjualan", "Stock Movement", "Laporan"],
+    "content_strategy": "Gunakan Bahasa Indonesia yang ringkas dan operasional. Utamakan pengecualian: stok menipis, stok kosong, penjualan terbaru, margin rendah.",
+    "visual_fusion": ["Swiss information design untuk struktur", "industrial wayfinding untuk status dan label", "ledger/print accounting untuk nuansa terpercaya"],
+    "layout_principle": "F-pattern dengan North Star metric di kiri atas dan tabel tindakan di bagian bawah; tidak memakai centered app container."
+  },
+  "research": {
+    "references": [
+      {"source": "https://www.saasframe.io/blog/the-anatomy-of-high-performance-saas-dashboard-design-2026-trends-patterns", "descriptors": ["role-based action hierarchy", "modified F-pattern", "KPI tiles with delta and sparkline", "progressive disclosure", "exception-led dashboard"]},
+      {"source": "https://www.shadcn.io/blocks/dashboard-inventory-levels", "descriptors": ["modular inventory widgets", "status-coded stock levels", "monospace SKU presentation", "dense but legible data tables"]},
+      {"source": "https://versich.com/blog/inventory-management-dashboard-with-power-bi/", "descriptors": ["top operational KPI row", "received versus put-away comparison", "alert-oriented bottleneck views"]}
+    ],
+    "applied_learning": "Adopt the actionable hierarchy and exception-first tables, but differentiate through warm paper surfaces, industrial orange as function-only accent, and visible ledger-like movement chronology."
+  },
+  "typography": {
+    "heading": {"family": "Manrope", "weights": [500, 700, 800], "usage": "page titles, section headers, KPI values", "classes": "font-manrope tracking-tight"},
+    "body": {"family": "IBM Plex Sans", "weights": [400, 500, 600], "usage": "labels, table content, descriptions", "classes": "font-plex"},
+    "data": {"family": "IBM Plex Mono", "usage": "SKU, barcode, quantities, invoice numbers", "classes": "font-mono tracking-tight"},
+    "rules": ["H1 max text-4xl sm:text-5xl lg:text-6xl", "H2 max text-2xl sm:text-3xl lg:text-4xl", "labels uppercase text-xs tracking-[0.2em]", "body leading-relaxed", "do not use Inter, Roboto, Open Sans, Lato for headings"]
+  },
+  "colors": {
+    "archetype": "SWISS & HIGH-CONTRAST with warm industrial paper twist",
+    "tokens": {"background": "#F4F1EA", "surface": "#FFFDF8", "surface_alt": "#E9E5DC", "ink": "#20252A", "muted_ink": "#596168", "border": "#C8C6BE", "primary": "#D95D27", "primary_hover": "#B8471A", "success": "#287A55", "warning": "#A66B00", "danger": "#B63832", "focus": "#174A78"},
+    "usage": "95% neutral; orange only for primary actions and selected states; green/amber/red only for stock meaning; no full-screen gradients.",
+    "contrast": "Verify normal text at 4.5:1 and large text at 3:1; use ink on light surfaces and white on primary buttons. Never use pure #000000 or #808080."
+  },
+  "visual_enhancers": {
+    "surface": "Flat solid warm surfaces with 1px borders; no glass over dense data. Use a subtle CSS grain/noise texture only in page background.",
+    "decoration": ["thin warehouse grid rules", "small corner registration marks on report headers", "vertical orange index bar for active navigation", "ledger-style dotted separators in movement timeline"],
+    "avoid": ["generic SaaS blue", "teal dashboard palette", "large gradients", "excessive rounded cards", "centered everything", "decorative stock photography"]
+  },
+  "components": {
+    "component_path": "/app/frontend/src/components/ui/",
+    "preferred": ["Button", "Input", "Select", "DropdownMenu", "Dialog", "Sheet", "Table", "Tabs", "Badge", "Progress", "Tooltip", "Skeleton", "Sonner"],
+    "custom_components": ["AppShell", "SidebarNav", "GlobalSkuSearch", "KpiStrip", "RevenueChart", "StockAlertTable", "MovementTimeline", "ProductForm", "StockReceiptForm", "SalesForm", "ReportToolbar"],
+    "rules": ["Use raw div/section layout around Shadcn primitives; customize radius to 6-8px.", "Do not use native select/date input for advanced interactions; use Select and Calendar.", "Use Sonner for import/export/save feedback.", "Every border container requires p-6 or p-8 internal padding."]
+  },
+  "grids": {
+    "dashboard": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-6 items-start",
+    "dashboard_spans": ["KPI widgets col-span-1", "revenue chart md:col-span-2 lg:col-span-3 row-span-2", "alerts md:col-span-1 lg:col-span-1 row-span-2", "recent movement lg:col-span-2", "top products lg:col-span-2"],
+    "tables": "w-full with dense row rhythm, sticky header, horizontal overflow on mobile",
+    "forms": "grid-cols-1 md:grid-cols-2 gap-6; primary submit aligned left, summary aligned right on desktop",
+    "mobile": "sidebar becomes Sheet; tables retain key columns and allow horizontal scroll; images are not used."
+  },
+  "layouts": {
+    "app_shell": "desktop-first: fixed-width sidebar with solid background and border-right, main content with px-6 md:px-8 lg:px-12 and generous py-8; header has opaque surface, z-50, and bottom border.",
+    "dashboard_story": ["morning status: omzet, nilai stok, low stock, gross margin", "diagnosis: revenue trend and stock alerts", "action: recent movements and quick actions"],
+    "products": "toolbar with global search, filter, export; table-first catalog; create/edit in Dialog or Sheet.",
+    "receiving_sales": "transaction form on left and calculated document summary on right; stock validation before confirmation.",
+    "reports": "date range/filter toolbar, summary strip, chart/table pairing, export affordance."
+  },
+  "motion": {
+    "entrance": "staggered opacity and translate-y-2 for dashboard modules, 160-240ms",
+    "interaction": "buttons transition-colors and transform separately; row hover changes background and left index rule; KPI values count only when meaningful",
+    "loading": "Skeleton matching table/widget geometry; never layout-shift",
+    "reduced_motion": "@media (prefers-reduced-motion: reduce) disables entrance transforms and uses instant opacity/state changes",
+    "forbidden": "transition-all; gratuitous parallax in data-heavy views"
+  },
+  "accessibility": {
+    "requirements": ["keyboard reachable sidebar, search, forms, tables, dialogs", "visible high-contrast focus ring using focus color", "status colors paired with text/icon, never color alone", "aria-label icon-only actions", "table headers and sort state exposed", "errors shown adjacent to fields and in live region"],
+    "test_ids": "All interactive and key informational elements require data-testid in kebab-case, e.g. dashboard-revenue-kpi, global-sku-search-input, product-create-button, sales-submit-button, stock-alert-row, report-export-button.",
+    "header": "Visible desktop navigation: brand, Dashboard, Produk, Barang Masuk, Penjualan, Stock Movement, Laporan, plus primary CTA. Mobile uses Sheet but desktop links remain visible.",
+    "surfaces": "Never use fully transparent header, overlay, popover, or dropdown background."
+  },
+  "media": {
+    "image_urls": [],
+    "policy": "No imagery is needed for this operational dashboard. Do not add placeholder image URLs. Use CSS texture and data visualization instead.",
+    "icons": "Use lucide-react already present or Phosphor if installed; never use AI-assistant emoji characters."
+  },
+  "3d_libraries": {"decision": "none", "reason": "Inventory operations require scanability and accuracy, not immersion; use Recharts/Shadcn charts for simple analytics."},
+  "data_and_behavior": {
+    "excel": ["show import/export actions prominently", "display last sync/source label", "validate SKU uniqueness before save", "preserve movement audit rows for receipt, sale, adjustment"],
+    "calculations": ["sale reduces available stock", "prevent confirmation when quantity exceeds stock", "omzet = selling price x quantity", "HPP = cost price x quantity", "gross profit = omzet - HPP", "margin = gross profit / omzet"],
+    "search": "Global search supports SKU, barcode, product name, brand; show keyboard shortcut and result type; use debounce and empty/error states."
+  },
+  "image_urls": [],
+  "instructions_to_main_agent": [
+    "Implement in .js/.jsx files, not .tsx.",
+    "Prioritize functional flows over visual decoration; every create/edit/receive/sale/search/export interaction must work or clearly surface its unavailable state.",
+    "Use existing Shadcn primitives from /app/frontend/src/components/ui and customize them rather than rebuilding accessible interactions.",
+    "Keep the interface cardless or lightly carded with 6-8px radii, visible borders, generous spacing, and no centered App text alignment.",
+    "Use real data wiring where available. If an API or Excel integration is not connected, label it MOCKED and make the limitation visible rather than pretending success."
+  ],
+  "GENERAL UI UX DESIGN GUIDELINES": [
+    "Mobile-first responsive behavior with desktop-first warehouse density.",
+    "Use specific transitions, never transition-all.",
+    "Give hover, active, focus, loading, empty, success, and error states to every interactive flow.",
+    "Use negative space and asymmetry to create hierarchy, not uniform equal cards.",
+    "Keep operational copy concise and in Bahasa Indonesia.",
+    "Customize scrollbar without adding a gutter.",
+    "Use h-full only when grid siblings need aligned bottoms; otherwise align-items-start.",
+    "Never obscure content with overlays; maintain contrast and focus management."
+  ],
+  "implementation_notes": {"tailwind_config": "/app/frontend/tailwind.config.js", "global_css": "/app/frontend/src/index.css", "app_css": "/app/frontend/src/App.css", "existing_ui_directory": "/app/frontend/src/components/ui/"}
+}
