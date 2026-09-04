@@ -1,11 +1,43 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { BarChart3, Boxes, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
+import { BarChart3, Boxes, CalendarRange, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
 import "./App.css";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const rupiah = (n) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(n || 0));
 const NAV = [["Dashboard", LayoutDashboard], ["Produk", Boxes], ["Barang Masuk", PackagePlus], ["Penjualan", ShoppingCart], ["Stock Movement", ClipboardList], ["Laporan", BarChart3]];
+
+const iso = (d) => d.toISOString().slice(0, 10);
+function presetRange(key) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  if (key === "today") return { start: iso(t), end: iso(t) };
+  if (key === "week") { const d = new Date(t); d.setDate(t.getDate() - t.getDay() + (t.getDay() === 0 ? -6 : 1)); return { start: iso(d), end: iso(t) }; }
+  if (key === "month") return { start: iso(new Date(t.getFullYear(), t.getMonth(), 1)), end: iso(t) };
+  if (key === "year") return { start: iso(new Date(t.getFullYear(), 0, 1)), end: iso(t) };
+  const d = new Date(t); d.setDate(t.getDate() - 6); return { start: iso(d), end: iso(t) };
+}
+
+function DateFilter({ range, setRange, preset, setPreset }) {
+  const options = [["today", "Hari ini"], ["week", "Minggu ini"], ["month", "Bulan ini"], ["year", "Tahun ini"], ["custom", "Kustom"]];
+  const pick = (k) => { setPreset(k); if (k !== "custom") setRange(presetRange(k)); };
+  return (
+    <div className="date-filter" data-testid="date-filter">
+      <CalendarRange size={16} />
+      <div className="preset-group">
+        {options.map(([k, l]) => (
+          <button key={k} type="button" className={preset === k ? "active" : ""} onClick={() => pick(k)} data-testid={`date-preset-${k}`}>{l}</button>
+        ))}
+      </div>
+      {preset === "custom" && (
+        <div className="custom-range">
+          <input type="date" value={range.start} onChange={e => setRange({ ...range, start: e.target.value })} data-testid="date-custom-start" />
+          <span>—</span>
+          <input type="date" value={range.end} onChange={e => setRange({ ...range, end: e.target.value })} data-testid="date-custom-end" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sidebar({ page, setPage, open, close, productsCount }) {
   return (
@@ -55,28 +87,32 @@ function Kpi({ label, value, note, tone = "" }) {
   );
 }
 
-function Dashboard({ data, setPage }) {
+function Dashboard({ data, setPage, range, setRange, preset, setPreset }) {
+  const maxBar = Math.max(1, ...(data.chart || []).map(b => b.value));
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <p className="eyebrow">RINGKASAN HARIAN</p>
+          <p className="eyebrow">RINGKASAN PERIODE</p>
           <h1>Selamat datang kembali, Operator.</h1>
           <p className="sub">Pantau arus stok dan penjualan dari satu tempat.</p>
         </div>
         <button className="primary" onClick={() => setPage("Penjualan")} data-testid="dashboard-new-sale-button"><Plus size={17} /> Transaksi penjualan</button>
       </div>
+      <DateFilter range={range} setRange={setRange} preset={preset} setPreset={setPreset} />
       <div className="kpi-grid">
-        <Kpi label="Omzet Hari Ini" value={rupiah(data.today_revenue)} note={`${data.today_units} unit terjual`} tone="accent" />
-        <Kpi label="Omzet Bulan Ini" value={rupiah(data.month_revenue)} note="Periode berjalan" />
-        <Kpi label="Total Produk" value={data.total_products} note="SKU aktif terdaftar" />
+        <Kpi label="Omzet Periode" value={rupiah(data.period_revenue)} note={`${data.period_units} unit · ${data.period_transactions} invoice`} tone="accent" />
+        <Kpi label="Laba Kotor" value={rupiah((data.period_revenue || 0) - (data.period_cost || 0))} note={`${data.period_revenue ? Math.round(((data.period_revenue - data.period_cost) / data.period_revenue) * 100) : 0}% margin`} />
+        <Kpi label="Omzet Hari Ini" value={rupiah(data.today_revenue)} note={`${data.today_units} unit terjual`} />
         <Kpi label="Total Stok" value={`${data.total_stock} unit`} note={`Nilai ${rupiah(data.inventory_value)}`} />
       </div>
       <div className="dashboard-grid">
         <section className="panel revenue-panel">
-          <div className="panel-head"><div><p className="eyebrow">PERFORMA PENJUALAN</p><h2>Omzet minggu ini</h2></div><span className="legend"><i /> Omzet</span></div>
-          <div className="bars">{[34, 52, 42, 68, 58, 82, 72].map((v, i) => <div className="bar-col" key={i}><div className="bar" style={{ height: `${v}%` }} /><small>{["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"][i]}</small></div>)}</div>
-          <div className="chart-total"><b>{rupiah(data.month_revenue)}</b><span>total periode</span></div>
+          <div className="panel-head"><div><p className="eyebrow">PERFORMA PENJUALAN</p><h2>Omzet {data.period_start} → {data.period_end}</h2></div><span className="legend"><i /> Omzet</span></div>
+          <div className="bars">{(data.chart || []).map((b, i) => (
+            <div className="bar-col" key={i}><div className="bar" style={{ height: `${Math.max(6, (b.value / maxBar) * 100)}%` }} title={rupiah(b.value)} /><small>{b.label}</small></div>
+          ))}</div>
+          <div className="chart-total"><b>{rupiah(data.period_revenue)}</b><span>total periode</span></div>
         </section>
         <section className="panel alert-panel">
           <div className="panel-head"><div><p className="eyebrow">PERLU PERHATIAN</p><h2>Stok menipis</h2></div><button className="text-button" onClick={() => setPage("Produk")} data-testid="dashboard-low-stock-link">Lihat semua</button></div>
@@ -102,14 +138,14 @@ function Dashboard({ data, setPage }) {
             ))}</tbody></table></div>
         </section>
         <section className="panel top-panel">
-          <div className="panel-head"><div><p className="eyebrow">PRODUK TERLARIS</p><h2>Top penjualan</h2></div><span className="period">Bulan ini</span></div>
+          <div className="panel-head"><div><p className="eyebrow">TERLARIS PADA PERIODE</p><h2>Top penjualan</h2></div><span className="period">{data.period_start} → {data.period_end}</span></div>
           {data.top_products.length ? data.top_products.map((p, i) => (
             <div className="top-row" key={p.product}>
               <span className="rank">0{i + 1}</span>
               <div><b>{p.product}</b><small>{p.qty} unit terjual</small></div>
               <strong>{rupiah(p.omzet)}</strong>
             </div>
-          )) : <div className="empty">Belum ada transaksi selesai.</div>}
+          )) : <div className="empty">Belum ada transaksi pada periode ini.</div>}
         </section>
       </div>
     </div>
@@ -475,7 +511,7 @@ function Movements({ movements }) {
   );
 }
 
-function Reports({ sales }) {
+function Reports({ sales, range, setRange, preset, setPreset }) {
   const total = sales.reduce((a, s) => a + Number(s.total || 0), 0);
   const qty = sales.reduce((a, s) => a + Number(s.qty || 0), 0);
   const cost = sales.reduce((a, s) => a + Number(s.cost_total || 0), 0);
@@ -485,17 +521,18 @@ function Reports({ sales }) {
         <div><p className="eyebrow">ANALISIS & EXPORT</p><h1>Laporan penjualan</h1><p className="sub">Ringkasan transaksi yang sudah selesai dan tervalidasi.</p></div>
         <a className="secondary" href={`${API}/export/sales`} data-testid="report-export-button"><Download size={16} /> Export CSV</a>
       </div>
+      <DateFilter range={range} setRange={setRange} preset={preset} setPreset={setPreset} />
       <div className="report-strip">
-        <Kpi label="Total transaksi" value={sales.length} note="Transaksi selesai" />
+        <Kpi label="Total transaksi" value={sales.length} note="Baris terjual" />
         <Kpi label="Produk terjual" value={`${qty} unit`} note="Jumlah unit" />
-        <Kpi label="Omzet" value={rupiah(total)} note="Penjualan valid" />
+        <Kpi label="Omzet" value={rupiah(total)} note={`${range.start} → ${range.end}`} />
         <Kpi label="Laba kotor" value={rupiah(total - cost)} note={`${total ? Math.round((total - cost) / total * 100) : 0}% margin`} />
       </div>
       <section className="panel table-panel">
         <div className="table-wrap">
           <table>
             <thead><tr><th>TANGGAL</th><th>INVOICE</th><th>PRODUK</th><th>QTY</th><th>HARGA JUAL</th><th>TOTAL</th><th>BAYAR</th><th>STATUS</th></tr></thead>
-            <tbody>{sales.map(s => (
+            <tbody>{sales.length ? sales.map(s => (
               <tr key={s.id}>
                 <td>{s.date}</td>
                 <td className="mono">{s.invoice}</td>
@@ -506,7 +543,7 @@ function Reports({ sales }) {
                 <td><span className={`badge ${s.payment_status === "Lunas" ? "green" : s.payment_status === "Tempo" ? "amber" : "blue"}`}>{s.payment_status || "Lunas"}</span></td>
                 <td><span className="badge green">{s.status}</span></td>
               </tr>
-            ))}</tbody>
+            )) : <tr><td colSpan={8}><div className="empty">Tidak ada transaksi pada periode ini.</div></td></tr>}</tbody>
           </table>
         </div>
       </section>
@@ -524,28 +561,34 @@ function App() {
   const [movements, setMovements] = useState([]);
   const [sales, setSales] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [dashRange, setDashRange] = useState(() => presetRange("week"));
+  const [dashPreset, setDashPreset] = useState("week");
+  const [reportRange, setReportRange] = useState(() => presetRange("month"));
+  const [reportPreset, setReportPreset] = useState("month");
 
   const reload = useCallback(async () => {
+    const dq = `?start=${dashRange.start}&end=${dashRange.end}`;
+    const sq = `?start=${reportRange.start}&end=${reportRange.end}`;
     const [d, p, all, m, s] = await Promise.all([
-      axios.get(`${API}/dashboard`),
+      axios.get(`${API}/dashboard${dq}`),
       axios.get(`${API}/products?search=${encodeURIComponent(query)}`),
       axios.get(`${API}/products`),
       axios.get(`${API}/movements`),
-      axios.get(`${API}/sales`),
+      axios.get(`${API}/sales${sq}`),
     ]);
     setData(d.data); setProducts(p.data); setAllProducts(all.data);
     setMovements(m.data); setSales(s.data);
-  }, [query]);
+  }, [query, dashRange.start, dashRange.end, reportRange.start, reportRange.end]);
 
   useEffect(() => { reload().catch(console.error); }, [reload]);
 
   const content =
-    page === "Dashboard" ? <Dashboard data={data} setPage={setPage} /> :
+    page === "Dashboard" ? <Dashboard data={data} setPage={setPage} range={dashRange} setRange={setDashRange} preset={dashPreset} setPreset={setDashPreset} /> :
     page === "Produk" ? <Products products={products} query={query} setQuery={setQuery} reload={reload} setSelected={setSelected} /> :
     page === "Barang Masuk" ? <ReceiptPage products={allProducts} reload={reload} /> :
     page === "Penjualan" ? <SalesPage products={allProducts} reload={reload} /> :
     page === "Stock Movement" ? <Movements movements={movements} /> :
-    <Reports sales={sales} />;
+    <Reports sales={sales} range={reportRange} setRange={setReportRange} preset={reportPreset} setPreset={setReportPreset} />;
 
   return (
     <div className="app-shell">

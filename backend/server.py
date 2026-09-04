@@ -230,19 +230,52 @@ async def movements(sku: str = ""):
 
 
 @api.get("/sales")
-async def sales():
-    return read_sheet("sales", SALE_COLS).iloc[::-1].to_dict("records")
+async def sales(start: str = "", end: str = ""):
+    df = read_sheet("sales", SALE_COLS)
+    if len(df) and start:
+        df = df[df.date.astype(str) >= start]
+    if len(df) and end:
+        df = df[df.date.astype(str) <= end]
+    return df.iloc[::-1].to_dict("records")
+
+
+def _period_bounds(start: str, end: str):
+    today = datetime.now(timezone.utc).date()
+    if not end:
+        end = today.isoformat()
+    if not start:
+        start = (today - timedelta(days=6)).isoformat()
+    return start, end
 
 
 @api.get("/dashboard")
-async def dashboard():
+async def dashboard(start: str = "", end: str = ""):
     p, m, s = read_sheet("products", PRODUCT_COLS), read_sheet("movements", MOVEMENT_COLS), read_sheet("sales", SALE_COLS)
     today = datetime.now(timezone.utc).date().isoformat()
     month = today[:7]
+    p_start, p_end = _period_bounds(start, end)
     valid = s[s.status == "Selesai"] if len(s) else s
     today_sales = valid[valid.date.astype(str) == today] if len(valid) else valid
     month_sales = valid[valid.date.astype(str).str.startswith(month)] if len(valid) else valid
-    top = valid.groupby("product", as_index=False).agg(qty=("qty", "sum"), omzet=("total", "sum")).sort_values("qty", ascending=False).head(5).to_dict("records") if len(valid) else []
+    period = valid[(valid.date.astype(str) >= p_start) & (valid.date.astype(str) <= p_end)] if len(valid) else valid
+    top = period.groupby("product", as_index=False).agg(qty=("qty", "sum"), omzet=("total", "sum")).sort_values("omzet", ascending=False).head(5).to_dict("records") if len(period) else []
+    # Chart buckets: daily buckets across the range (max 31)
+    from datetime import date as _date
+    d0 = _date.fromisoformat(p_start); d1 = _date.fromisoformat(p_end)
+    days = (d1 - d0).days
+    if days < 0: days = 0
+    step = max(1, (days // 30) + 1)
+    buckets = []
+    cur = d0
+    while cur <= d1:
+        nxt = cur + timedelta(days=step - 1)
+        if nxt > d1: nxt = d1
+        chunk = period[(period.date.astype(str) >= cur.isoformat()) & (period.date.astype(str) <= nxt.isoformat())] if len(period) else period
+        buckets.append({
+            "label": cur.strftime("%d/%m") if step == 1 else f"{cur.strftime('%d/%m')}–{nxt.strftime('%d/%m')}",
+            "value": float(pd.to_numeric(chunk.total, errors="coerce").sum()) if len(chunk) else 0.0,
+        })
+        cur = nxt + timedelta(days=1)
     return {
         "total_products": len(p),
         "total_stock": int(pd.to_numeric(p.stock, errors="coerce").sum()),
@@ -250,6 +283,13 @@ async def dashboard():
         "today_revenue": float(pd.to_numeric(today_sales.total, errors="coerce").sum()),
         "month_revenue": float(pd.to_numeric(month_sales.total, errors="coerce").sum()),
         "today_units": int(pd.to_numeric(today_sales.qty, errors="coerce").sum()),
+        "period_start": p_start,
+        "period_end": p_end,
+        "period_revenue": float(pd.to_numeric(period.total, errors="coerce").sum()) if len(period) else 0.0,
+        "period_units": int(pd.to_numeric(period.qty, errors="coerce").sum()) if len(period) else 0,
+        "period_transactions": int(period.invoice.nunique()) if len(period) else 0,
+        "period_cost": float(pd.to_numeric(period.cost_total, errors="coerce").sum()) if len(period) else 0.0,
+        "chart": buckets,
         "low_stock": p[p.stock.astype(float) <= p.min_stock.astype(float)].to_dict("records"),
         "recent_movements": m.iloc[::-1].head(6).to_dict("records"),
         "top_products": top,
