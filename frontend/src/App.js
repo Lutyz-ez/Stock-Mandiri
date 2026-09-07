@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { BarChart3, Boxes, CalendarRange, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
+import { BarChart3, Boxes, CalendarRange, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Pencil, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
 import "./App.css";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -152,45 +152,69 @@ function Dashboard({ data, setPage, range, setRange, preset, setPreset }) {
   );
 }
 
-function ProductForm({ onClose, onSaved }) {
-  const [form, setForm] = useState({ sku: "", name: "", category: "", brand: "", cost_price: "", sell_price: "", online_price: "", stock: "", min_stock: "", location: "", supplier: "" });
+function ProductForm({ initial, onClose, onSaved }) {
+  const isEdit = !!initial;
+  const [form, setForm] = useState(() => ({
+    sku: initial?.sku || "",
+    name: initial?.name || "",
+    category: initial?.category || "",
+    brand: initial?.brand || "",
+    sell_price: initial?.sell_price || "",
+    online_price: initial?.online_price || "",
+    stock: initial?.stock ?? "",
+    location: initial?.location || "",
+    supplier: initial?.supplier || "",
+  }));
   const save = async (e) => {
     e.preventDefault();
+    const payload = {
+      name: form.name,
+      category: form.category,
+      brand: form.brand,
+      sell_price: +form.sell_price || 0,
+      online_price: +form.online_price || 0,
+      stock: +form.stock || 0,
+      location: form.location,
+      supplier: form.supplier,
+    };
     try {
-      await axios.post(`${API}/products`, {
-        ...form,
-        cost_price: +form.cost_price || 0,
-        sell_price: +form.sell_price || 0,
-        online_price: +form.online_price || 0,
-        stock: +form.stock || 0,
-        min_stock: +form.min_stock || 0,
-      });
+      if (isEdit) {
+        await axios.put(`${API}/products/${encodeURIComponent(form.sku)}`, payload);
+      } else {
+        await axios.post(`${API}/products`, { ...payload, sku: form.sku, cost_price: 0, min_stock: 0 });
+      }
       onSaved();
     } catch (err) { alert(err.response?.data?.detail || "Gagal menyimpan produk"); }
   };
   const fields = [
-    ["sku", "SKU *"], ["name", "Nama produk *"], ["brand", "Brand"], ["category", "Kategori"],
-    ["cost_price", "Harga modal"], ["sell_price", "Harga jual *"], ["online_price", "Harga jual online"],
-    ["stock", "Stok awal"], ["min_stock", "Minimum stok"], ["location", "Lokasi / rak"], ["supplier", "Supplier"],
+    ["sku", "SKU *", !isEdit],
+    ["name", "Nama produk *", true],
+    ["brand", "Brand"],
+    ["category", "Kategori"],
+    ["sell_price", "Harga jual *"],
+    ["online_price", "Harga jual online"],
+    ["stock", isEdit ? "Stok saat ini" : "Stok awal"],
+    ["location", "Lokasi / rak (opsional)"],
+    ["supplier", "Supplier (opsional)"],
   ];
   return (
     <div className="modal-backdrop">
       <form className="modal" onSubmit={save}>
         <div className="modal-head">
-          <div><p className="eyebrow">MASTER PRODUK</p><h2>Tambah produk</h2></div>
+          <div><p className="eyebrow">MASTER PRODUK</p><h2>{isEdit ? "Ubah produk" : "Tambah produk"}</h2></div>
           <button type="button" onClick={onClose} data-testid="product-form-close-button"><X size={18} /></button>
         </div>
         <div className="form-grid">
-          {fields.map(([k, l]) => (
+          {fields.map(([k, l, req]) => (
             <label key={k}>{l}
-              <input required={k === "sku" || k === "name" || k === "sell_price"}
-                type={k.includes("price") || ["stock", "min_stock"].includes(k) ? "number" : "text"}
+              <input required={req || false} disabled={k === "sku" && isEdit}
+                type={k.includes("price") || k === "stock" ? "number" : "text"}
                 value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })}
                 data-testid={`product-form-${k}-input`} />
             </label>
           ))}
         </div>
-        <button className="primary full" data-testid="product-form-submit-button"><Plus size={17} /> Simpan produk</button>
+        <button className="primary full" data-testid="product-form-submit-button"><Plus size={17} /> {isEdit ? "Simpan perubahan" : "Simpan produk"}</button>
       </form>
     </div>
   );
@@ -276,7 +300,21 @@ function ImportModal({ onClose, onDone }) {
 
 function Products({ products, query, setQuery, reload, setSelected }) {
   const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const del = async (p) => {
+    if (!window.confirm(`Hapus produk ${p.sku} — ${p.name}?`)) return;
+    try {
+      await axios.delete(`${API}/products/${encodeURIComponent(p.sku)}`);
+      reload();
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Gagal hapus produk";
+      if (err.response?.status === 409 && window.confirm(`${msg}\n\nNonaktifkan produk ini?`)) {
+        await axios.put(`${API}/products/${encodeURIComponent(p.sku)}`, { active: false });
+        reload();
+      } else if (err.response?.status !== 409) alert(msg);
+    }
+  };
   return (
     <div className="page">
       <div className="page-head">
@@ -298,22 +336,29 @@ function Products({ products, query, setQuery, reload, setSelected }) {
       <section className="panel table-panel">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>PRODUK / SKU</th><th>KATEGORI</th><th>HARGA JUAL</th><th>HARGA ONLINE</th><th>STOK</th><th>LOKASI</th><th>STATUS</th></tr></thead>
+            <thead><tr><th>PRODUK / SKU</th><th>KATEGORI</th><th>HARGA JUAL</th><th>HARGA ONLINE</th><th>STOK</th><th>LOKASI</th><th>STATUS</th><th style={{ textAlign: "right" }}>AKSI</th></tr></thead>
             <tbody>{products.map(p => (
-              <tr key={p.id} onClick={() => setSelected(p)} className="clickable" data-testid="product-table-row">
-                <td><b>{p.name}</b><small className="mono">{p.sku} · {p.brand || "Tanpa brand"}</small></td>
+              <tr key={p.id} data-testid="product-table-row">
+                <td className="clickable" onClick={() => setSelected(p)}><b>{p.name}</b><small className="mono">{p.sku} · {p.brand || "Tanpa brand"}</small></td>
                 <td>{p.category || "—"}</td>
                 <td className="money">{rupiah(p.sell_price)}</td>
                 <td className="money">{Number(p.online_price) > 0 ? rupiah(p.online_price) : "—"}</td>
                 <td><span className={`stock-number ${Number(p.stock) <= Number(p.min_stock) ? "low" : ""}`}>{p.stock} <small>{p.unit}</small></span></td>
                 <td className="mono">{p.location || "—"}</td>
-                <td><span className={`badge ${Number(p.stock) === 0 ? "red" : Number(p.stock) <= Number(p.min_stock) ? "amber" : "green"}`}>{Number(p.stock) === 0 ? "STOK HABIS" : Number(p.stock) <= Number(p.min_stock) ? "MENIPIS" : "AMAN"}</span></td>
+                <td><span className={`badge ${p.active === false ? "amber" : Number(p.stock) === 0 ? "red" : Number(p.stock) <= Number(p.min_stock) ? "amber" : "green"}`}>{p.active === false ? "NONAKTIF" : Number(p.stock) === 0 ? "STOK HABIS" : Number(p.stock) <= Number(p.min_stock) ? "MENIPIS" : "AMAN"}</span></td>
+                <td>
+                  <div className="row-actions">
+                    <button type="button" className="icon-btn" onClick={() => setEditing(p)} title="Ubah" data-testid={`product-edit-${p.sku}-button`}><Pencil size={15} /></button>
+                    <button type="button" className="icon-btn danger" onClick={() => del(p)} title="Hapus" data-testid={`product-delete-${p.sku}-button`}><Trash2 size={15} /></button>
+                  </div>
+                </td>
               </tr>
             ))}</tbody>
           </table>
         </div>
       </section>
       {show && <ProductForm onClose={() => setShow(false)} onSaved={() => { setShow(false); reload(); }} />}
+      {editing && <ProductForm initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); reload(); }} />}
     </div>
   );

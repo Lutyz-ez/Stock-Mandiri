@@ -120,6 +120,21 @@ class BulkProductsIn(BaseModel):
     products: List[ProductIn]
 
 
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    barcode: Optional[str] = None
+    category: Optional[str] = None
+    brand: Optional[str] = None
+    cost_price: Optional[float] = None
+    sell_price: Optional[float] = None
+    online_price: Optional[float] = None
+    stock: Optional[int] = None
+    min_stock: Optional[int] = None
+    location: Optional[str] = None
+    supplier: Optional[str] = None
+    active: Optional[bool] = None
+
+
 app = FastAPI(title="Mandiri Sejahtera Inventory")
 api = APIRouter(prefix="/api")
 
@@ -148,6 +163,38 @@ async def create_product(item: ProductIn):
         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
         write_book(df, read_sheet("movements", MOVEMENT_COLS), read_sheet("sales", SALE_COLS))
         return row
+
+
+@api.put("/products/{sku}")
+async def update_product(sku: str, patch: ProductUpdate):
+    async with LOCK:
+        df = read_sheet("products", PRODUCT_COLS)
+        idx = df.index[df.sku.astype(str).str.upper() == sku.upper()].tolist()
+        if not idx:
+            raise HTTPException(404, "Produk tidak ditemukan")
+        i = idx[0]
+        for k, v in patch.model_dump(exclude_unset=True).items():
+            if v is not None:
+                df.at[i, k] = v
+        df.at[i, "updated_at"] = now_iso()
+        write_book(df, read_sheet("movements", MOVEMENT_COLS), read_sheet("sales", SALE_COLS))
+        return df.iloc[i].to_dict()
+
+
+@api.delete("/products/{sku}")
+async def delete_product(sku: str, force: bool = False):
+    async with LOCK:
+        df = read_sheet("products", PRODUCT_COLS)
+        idx = df.index[df.sku.astype(str).str.upper() == sku.upper()].tolist()
+        if not idx:
+            raise HTTPException(404, "Produk tidak ditemukan")
+        m = read_sheet("movements", MOVEMENT_COLS)
+        has_history = len(m[m.sku.astype(str).str.upper() == sku.upper()]) > 0 if len(m) else False
+        if has_history and not force:
+            raise HTTPException(409, "Produk memiliki histori transaksi. Nonaktifkan produk agar histori tetap tersimpan.")
+        df = df.drop(idx[0]).reset_index(drop=True)
+        write_book(df, m, read_sheet("sales", SALE_COLS))
+        return {"deleted": sku.upper()}
 
 
 @api.post("/receipts")
