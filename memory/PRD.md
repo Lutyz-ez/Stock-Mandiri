@@ -16,6 +16,15 @@ Aplikasi web profesional untuk Manajemen Inventory Gudang & Penjualan (distribut
 - Stock movement ledger, kartu stok per SKU
 - Laporan penjualan + margin/laba kotor
 - Validasi: SKU unik, stok tidak boleh negatif, preview import (SKU kosong/duplikat/harga invalid)
+- Filter tanggal (Hari ini/Minggu/Bulan/Tahun/Kustom) di Dashboard & Laporan
+- Produk: Edit & Hapus (HARD DELETE, permintaan user); form tanpa Harga Modal & Min Stok; supplier/lokasi opsional
+
+## Implemented (2026-06, sesi ini) — Jatuh tempo pembayaran
+- Sheet `sales` kolom baru `due_date`. POST /api/sales wajib `due_date` jika status Tempo/Cicilan (400 jika kosong), dikosongkan jika Lunas.
+- GET /api/sales/reminders → invoice Tempo/Cicilan belum lunas (group per invoice, days_left, overdue, due_today, total). Juga dikirim di GET /api/dashboard sebagai `payment_reminders`.
+- PUT /api/sales/{invoice}/pay → tandai invoice Lunas.
+- UI: form Penjualan menampilkan input tanggal saat Tempo/Cicilan; Dashboard panel "Pengingat Pembayaran" + banner merah bila jatuh tempo + tombol "Lunas"; Laporan kolom JATUH TEMPO.
+- Tested: testing_agent iteration_2 — semua lolos.
 
 ## Backlog (P1/P2)
 - Halaman detail produk penuh + grafik penjualan produk
@@ -24,4 +33,4 @@ Aplikasi web profesional untuk Manajemen Inventory Gudang & Penjualan (distribut
 - Multi gudang (kolom `warehouse` di stock)
 - Audit log & user role login
 - Barcode scan (input + generator)
-- Filter tanggal custom di dashboard & laporan
+- Halaman daftar piutang (semua tempo/cicilan + histori pembayaran cicilan parsial)

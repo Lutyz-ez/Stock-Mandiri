@@ -1,0 +1,25 @@
+{
+  "summary": "Verified new features: hard-delete products, due_date validation on Tempo/Cicilan sales, GET /api/sales/reminders shape/sort/overdue flag, dashboard.payment_reminders, PUT /api/sales/{invoice}/pay, plus frontend flows (Penjualan due-date show/hide, Ringkasan text, submit+reset, Dashboard reminder panel + overdue banner + mark-paid confirm, Laporan JATUH TEMPO column). Backend 11/11 pytest passing. Frontend end-to-end flow via Playwright passed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sales page - product SKU <select>", "issues": ["Hydration warning: <span> rendered as child of <option> due to visual-editor instrumentation wrapping option children. Cosmetic/dev-only warning, no functional impact."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_new_features.py", "/app/test_reports/pytest/pytest_iter2.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Products page Filter input onChange is now wired (setQuery) - previous iter1 issue resolved.",
+    "Hard delete works but products page still has fallback to soft-deactivate on 409; not reachable since backend never returns 409 on delete now - dead branch (minor).",
+    "SaleIn.due_date accepts any string prefix parsable by datetime.fromisoformat; that's fine, but format error branch is uncovered by tests."
+  ],
+  "updated_files": ["/app/backend/tests/test_new_features.py", "/app/test_reports/iteration_2.json", "/app/test_reports/pytest/pytest_iter2.xml"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% critical flows"},
+  "seed_data_creation": "Created transient TEST_ prefixed sales (Tempo/Lunas) and TEST-DEL-* products (deleted). One sale INV-TEST-LATE was marked Lunas during UI test; note this modifies seeded data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All requested behaviors verified. Note: UI test marked INV-TEST-LATE as Lunas so it no longer appears in reminders. Backend tests use REACT_APP_BACKEND_URL and are safe to re-run.",
+  "rca of the issue": "N/A - no issues found."
+}
