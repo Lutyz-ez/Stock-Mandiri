@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { BarChart3, Boxes, CalendarRange, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Pencil, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
+import { BarChart3, BellRing, Boxes, CalendarRange, ClipboardList, Download, LayoutDashboard, Menu, PackagePlus, Pencil, Plus, Search, ShoppingCart, Trash2, Upload, X } from "lucide-react";
 import "./App.css";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -87,8 +87,39 @@ function Kpi({ label, value, note, tone = "" }) {
   );
 }
 
-function Dashboard({ data, setPage, range, setRange, preset, setPreset }) {
+function PaymentReminders({ reminders, onPaid }) {
+  const overdue = reminders.filter(r => r.overdue).length;
+  const dueLabel = (r) => r.overdue ? `Terlambat ${Math.abs(r.days_left)} hari` : r.due_today ? "Jatuh tempo hari ini" : `${r.days_left} hari lagi`;
+  const markPaid = async (inv) => {
+    if (!window.confirm(`Tandai invoice ${inv} sebagai Lunas?`)) return;
+    try { await axios.put(`${API}/sales/${encodeURIComponent(inv)}/pay`); onPaid(); }
+    catch (err) { alert(err.response?.data?.detail || "Gagal memperbarui status"); }
+  };
+  return (
+    <section className={`panel reminder-panel ${overdue ? "has-overdue" : ""}`} data-testid="payment-reminder-panel">
+      <div className="panel-head">
+        <div><p className="eyebrow">PENGINGAT PEMBAYARAN</p><h2>Tempo & cicilan</h2></div>
+        {overdue > 0 && <span className="badge red" data-testid="payment-overdue-count">{overdue} jatuh tempo</span>}
+      </div>
+      {reminders.length ? reminders.map(r => (
+        <div className={`alert-row ${r.overdue ? "overdue" : r.due_today ? "due-today" : ""}`} key={r.invoice} data-testid="payment-reminder-row">
+          <span className={`warning-icon ${r.overdue || r.due_today ? "danger" : ""}`}>{r.overdue ? "!" : r.days_left}</span>
+          <div>
+            <b>{r.invoice} · {r.customer || "Tanpa nama"}</b>
+            <small className="mono">{r.payment_status} · {r.due_date} · {dueLabel(r)}</small>
+          </div>
+          <strong>{rupiah(r.total)}</strong>
+          <button type="button" className="secondary small" onClick={() => markPaid(r.invoice)} data-testid={`payment-mark-paid-${r.invoice}`}>Lunas</button>
+        </div>
+      )) : <div className="empty">Tidak ada pembayaran tempo/cicilan yang menunggu.</div>}
+    </section>
+  );
+}
+
+function Dashboard({ data, setPage, range, setRange, preset, setPreset, reload }) {
   const maxBar = Math.max(1, ...(data.chart || []).map(b => b.value));
+  const reminders = data.payment_reminders || [];
+  const overdue = reminders.filter(r => r.overdue || r.due_today);
   return (
     <div className="page">
       <div className="page-head">
@@ -99,6 +130,12 @@ function Dashboard({ data, setPage, range, setRange, preset, setPreset }) {
         </div>
         <button className="primary" onClick={() => setPage("Penjualan")} data-testid="dashboard-new-sale-button"><Plus size={17} /> Transaksi penjualan</button>
       </div>
+      {overdue.length > 0 && (
+        <div className="overdue-banner" data-testid="payment-overdue-banner">
+          <BellRing size={18} />
+          <div><b>{overdue.length} invoice sudah jatuh tempo</b><small>{overdue.map(r => `${r.invoice} (${r.customer || "-"})`).join(", ")}</small></div>
+        </div>
+      )}
       <DateFilter range={range} setRange={setRange} preset={preset} setPreset={setPreset} />
       <div className="kpi-grid">
         <Kpi label="Omzet Periode" value={rupiah(data.period_revenue)} note={`${data.period_units} unit · ${data.period_transactions} invoice`} tone="accent" />
@@ -124,6 +161,7 @@ function Dashboard({ data, setPage, range, setRange, preset, setPreset }) {
             </div>
           )) : <div className="empty">Semua stok dalam kondisi aman.</div>}
         </section>
+        <PaymentReminders reminders={reminders} onPaid={reload} />
         <section className="panel movement-panel">
           <div className="panel-head"><div><p className="eyebrow">AKTIVITAS TERBARU</p><h2>Pergerakan stok</h2></div><button className="text-button" onClick={() => setPage("Stock Movement")} data-testid="dashboard-movements-link">Buka kartu stok</button></div>
           <div className="table-wrap"><table><thead><tr><th>WAKTU</th><th>TRANSAKSI</th><th>PRODUK</th><th>JENIS</th><th>QTY</th></tr></thead>
@@ -432,7 +470,9 @@ function ReceiptPage({ products, reload }) {
 }
 
 function SalesPage({ products, reload }) {
-  const [header, setHeader] = useState({ invoice: "", customer: "", payment_method: "Transfer", payment_status: "Lunas", note: "" });
+  const emptyHeader = { invoice: "", customer: "", payment_method: "Transfer", payment_status: "Lunas", due_date: "", note: "" };
+  const [header, setHeader] = useState(emptyHeader);
+  const isCredit = header.payment_status === "Tempo" || header.payment_status === "Cicilan";
   const [items, setItems] = useState([{ sku: "", name: "", qty: 1, sell_price: "" }]);
   const setItem = (idx, patch) => setItems(items.map((it, i) => i === idx ? { ...it, ...patch } : it));
   const addRow = () => setItems([...items, { sku: "", name: "", qty: 1, sell_price: "" }]);
@@ -453,15 +493,17 @@ function SalesPage({ products, reload }) {
       customer: header.customer,
       payment_method: header.payment_method,
       payment_status: header.payment_status,
+      due_date: isCredit ? header.due_date : "",
       note: header.note,
       items: items.filter(it => it.sku).map(it => ({ sku: it.sku, qty: +it.qty || 0, sell_price: +it.sell_price || 0 })),
     };
     if (!payload.items.length) { alert("Tambahkan minimal satu produk"); return; }
+    if (isCredit && !header.due_date) { alert("Isi tanggal pembayaran / jatuh tempo untuk status Tempo atau Cicilan"); return; }
     try {
       const { data } = await axios.post(`${API}/sales`, payload);
       alert(`Penjualan berhasil disimpan · Invoice ${data.invoice}. Stok telah dikurangi.`);
       setItems([{ sku: "", name: "", qty: 1, sell_price: "" }]);
-      setHeader({ invoice: "", customer: "", payment_method: "Transfer", payment_status: "Lunas", note: "" });
+      setHeader(emptyHeader);
       reload();
     } catch (err) { alert(err.response?.data?.detail || "Transaksi gagal"); }
   };
@@ -494,6 +536,11 @@ function SalesPage({ products, reload }) {
                 <option>Lunas</option><option>Tempo</option><option>Cicilan</option>
               </select>
             </label>
+            {isCredit && (
+              <label data-testid="sale-form-due-date-field">Tanggal pembayaran / jatuh tempo
+                <input type="date" required value={header.due_date} min={iso(new Date())} onChange={e => setHeader({ ...header, due_date: e.target.value })} data-testid="sale-form-due-date-input" />
+              </label>
+            )}
           </div>
           <div className="line-header"><span>PRODUK</span><span>QTY</span><span>HARGA JUAL</span><span /></div>
           {items.map((it, idx) => {
@@ -518,7 +565,7 @@ function SalesPage({ products, reload }) {
         <aside className="panel summary-panel">
           <p className="eyebrow">RINGKASAN</p>
           <h2>{items.filter(i => i.sku).length} item</h2>
-          <p className="mono">{header.payment_status} · {header.payment_method}</p>
+          <p className="mono">{header.payment_status} · {header.payment_method}{isCredit && header.due_date ? ` · jatuh tempo ${header.due_date}` : ""}</p>
           <div className="summary-line"><span>Total transaksi</span><b>{rupiah(total)}</b></div>
           {stockError && <div className="form-error" data-testid="sale-stock-error">Stok tidak cukup untuk {stockError.sku}</div>}
           <button className="primary full" disabled={!items.some(i => i.sku) || stockError} data-testid="sale-form-submit-button">
@@ -576,7 +623,7 @@ function Reports({ sales, range, setRange, preset, setPreset }) {
       <section className="panel table-panel">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>TANGGAL</th><th>INVOICE</th><th>PRODUK</th><th>QTY</th><th>HARGA JUAL</th><th>TOTAL</th><th>BAYAR</th><th>STATUS</th></tr></thead>
+            <thead><tr><th>TANGGAL</th><th>INVOICE</th><th>PRODUK</th><th>QTY</th><th>HARGA JUAL</th><th>TOTAL</th><th>BAYAR</th><th>JATUH TEMPO</th><th>STATUS</th></tr></thead>
             <tbody>{sales.length ? sales.map(s => (
               <tr key={s.id}>
                 <td>{s.date}</td>
@@ -586,9 +633,10 @@ function Reports({ sales, range, setRange, preset, setPreset }) {
                 <td>{rupiah(s.sell_price)}</td>
                 <td className="money">{rupiah(s.total)}</td>
                 <td><span className={`badge ${s.payment_status === "Lunas" ? "green" : s.payment_status === "Tempo" ? "amber" : "blue"}`}>{s.payment_status || "Lunas"}</span></td>
+                <td className="mono" data-testid="report-due-date-cell">{s.payment_status !== "Lunas" && s.due_date ? <span className={String(s.due_date).slice(0, 10) < iso(new Date()) ? "red-text" : ""}>{String(s.due_date).slice(0, 10)}</span> : "—"}</td>
                 <td><span className="badge green">{s.status}</span></td>
               </tr>
-            )) : <tr><td colSpan={8}><div className="empty">Tidak ada transaksi pada periode ini.</div></td></tr>}</tbody>
+            )) : <tr><td colSpan={9}><div className="empty">Tidak ada transaksi pada periode ini.</div></td></tr>}</tbody>
           </table>
         </div>
       </section>
@@ -628,7 +676,7 @@ function App() {
   useEffect(() => { reload().catch(console.error); }, [reload]);
 
   const content =
-    page === "Dashboard" ? <Dashboard data={data} setPage={setPage} range={dashRange} setRange={setDashRange} preset={dashPreset} setPreset={setDashPreset} /> :
+    page === "Dashboard" ? <Dashboard data={data} setPage={setPage} range={dashRange} setRange={setDashRange} preset={dashPreset} setPreset={setDashPreset} reload={reload} /> :
     page === "Produk" ? <Products products={products} query={query} setQuery={setQuery} reload={reload} setSelected={setSelected} /> :
     page === "Barang Masuk" ? <ReceiptPage products={allProducts} reload={reload} /> :
     page === "Penjualan" ? <SalesPage products={allProducts} reload={reload} /> :

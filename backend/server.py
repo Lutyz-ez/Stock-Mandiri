@@ -19,7 +19,7 @@ PRODUCT_COLS = ["id", "sku", "barcode", "name", "short_name", "category", "brand
 MOVEMENT_COLS = ["id", "transaction_no", "sku", "product", "type", "qty_in", "qty_out", "before", "after",
                  "price", "note", "user", "created_at"]
 SALE_COLS = ["id", "invoice", "date", "customer", "sku", "product", "qty", "sell_price", "discount",
-             "total", "cost_total", "status", "payment_status", "payment_method", "sales", "note"]
+             "total", "cost_total", "status", "payment_status", "payment_method", "sales", "note", "due_date"]
 
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
@@ -112,6 +112,7 @@ class SaleIn(BaseModel):
     customer: str = ""
     payment_method: str = "Transfer"
     payment_status: str = "Lunas"  # Lunas / Tempo / Cicilan
+    due_date: Optional[str] = ""
     note: str = ""
     items: List[SaleItem]
 
@@ -182,18 +183,14 @@ async def update_product(sku: str, patch: ProductUpdate):
 
 
 @api.delete("/products/{sku}")
-async def delete_product(sku: str, force: bool = False):
+async def delete_product(sku: str):
     async with LOCK:
         df = read_sheet("products", PRODUCT_COLS)
         idx = df.index[df.sku.astype(str).str.upper() == sku.upper()].tolist()
         if not idx:
             raise HTTPException(404, "Produk tidak ditemukan")
-        m = read_sheet("movements", MOVEMENT_COLS)
-        has_history = len(m[m.sku.astype(str).str.upper() == sku.upper()]) > 0 if len(m) else False
-        if has_history and not force:
-            raise HTTPException(409, "Produk memiliki histori transaksi. Nonaktifkan produk agar histori tetap tersimpan.")
         df = df.drop(idx[0]).reset_index(drop=True)
-        write_book(df, m, read_sheet("sales", SALE_COLS))
+        write_book(df, read_sheet("movements", MOVEMENT_COLS), read_sheet("sales", SALE_COLS))
         return {"deleted": sku.upper()}
 
 
@@ -233,6 +230,16 @@ async def create_sale(data: SaleIn):
         m = read_sheet("movements", MOVEMENT_COLS)
         stamp = now_iso()
         invoice = (data.invoice or "").strip() or next_invoice(s)
+        due_date = (data.due_date or "").strip()
+        if data.payment_status in ("Tempo", "Cicilan"):
+            if not due_date:
+                raise HTTPException(400, "Tanggal pembayaran wajib diisi untuk status Tempo/Cicilan")
+            try:
+                datetime.fromisoformat(due_date)
+            except ValueError:
+                raise HTTPException(400, "Format tanggal pembayaran tidak valid (YYYY-MM-DD)")
+        else:
+            due_date = ""
         # Prevalidate every line before committing anything
         line_products = []
         for it in data.items:
@@ -256,7 +263,7 @@ async def create_sale(data: SaleIn):
                     "sku": p.at[i, "sku"], "product": p.at[i, "name"], "qty": it.qty, "sell_price": price,
                     "discount": 0, "total": total, "cost_total": it.qty * cost, "status": "Selesai",
                     "payment_status": data.payment_status, "payment_method": data.payment_method,
-                    "sales": "Operator", "note": data.note}
+                    "sales": "Operator", "note": data.note, "due_date": due_date}
             movement = {"id": str(uuid.uuid4()), "transaction_no": invoice, "sku": p.at[i, "sku"],
                         "product": p.at[i, "name"], "type": "Penjualan", "qty_in": 0, "qty_out": it.qty,
                         "before": before, "after": after, "price": price, "note": data.note,
@@ -284,6 +291,53 @@ async def sales(start: str = "", end: str = ""):
     if len(df) and end:
         df = df[df.date.astype(str) <= end]
     return df.iloc[::-1].to_dict("records")
+
+
+def payment_reminders(s):
+    today = datetime.now(timezone.utc).date()
+    if not len(s):
+        return []
+    pending = s[(s.payment_status.astype(str).isin(["Tempo", "Cicilan"])) & (s.due_date.astype(str).str.strip() != "")]
+    if not len(pending):
+        return []
+    out = []
+    for inv, g in pending.groupby("invoice", sort=False):
+        due_raw = str(g.due_date.iloc[0])[:10]
+        try:
+            due = datetime.fromisoformat(due_raw).date()
+        except ValueError:
+            continue
+        days_left = (due - today).days
+        out.append({
+            "invoice": str(inv),
+            "customer": str(g.customer.iloc[0]),
+            "payment_status": str(g.payment_status.iloc[0]),
+            "due_date": due.isoformat(),
+            "days_left": days_left,
+            "overdue": days_left < 0,
+            "due_today": days_left == 0,
+            "total": float(pd.to_numeric(g.total, errors="coerce").sum()),
+            "items": int(len(g)),
+        })
+    out.sort(key=lambda r: r["days_left"])
+    return out
+
+
+@api.get("/sales/reminders")
+async def sales_reminders():
+    return payment_reminders(read_sheet("sales", SALE_COLS))
+
+
+@api.put("/sales/{invoice}/pay")
+async def mark_paid(invoice: str):
+    async with LOCK:
+        s = read_sheet("sales", SALE_COLS)
+        idx = s.index[s.invoice.astype(str) == invoice].tolist()
+        if not idx:
+            raise HTTPException(404, "Invoice tidak ditemukan")
+        s.loc[idx, "payment_status"] = "Lunas"
+        write_book(read_sheet("products", PRODUCT_COLS), read_sheet("movements", MOVEMENT_COLS), s)
+        return {"invoice": invoice, "payment_status": "Lunas", "rows": len(idx)}
 
 
 def _period_bounds(start: str, end: str):
@@ -340,6 +394,7 @@ async def dashboard(start: str = "", end: str = ""):
         "low_stock": p[p.stock.astype(float) <= p.min_stock.astype(float)].to_dict("records"),
         "recent_movements": m.iloc[::-1].head(6).to_dict("records"),
         "top_products": top,
+        "payment_reminders": payment_reminders(s),
     }
 
 
