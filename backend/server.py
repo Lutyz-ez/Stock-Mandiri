@@ -9,9 +9,12 @@ import pandas as pd
 import io
 import uuid
 import asyncio
+import os
 
 ROOT = Path(__file__).parent
-BOOK = ROOT / "inventory.xlsx"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(ROOT)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+BOOK = DATA_DIR / "inventory.xlsx"
 LOCK = asyncio.Lock()
 PRODUCT_COLS = ["id", "sku", "barcode", "name", "short_name", "category", "brand", "model", "unit",
                 "cost_price", "sell_price", "online_price", "stock", "min_stock", "location", "supplier",
