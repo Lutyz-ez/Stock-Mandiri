@@ -11,6 +11,11 @@ from typing import Dict, List
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.types import Boolean, Float, Integer, Text
+from dotenv import load_dotenv
+
+
+ROOT = Path(__file__).parent
+load_dotenv(ROOT / ".env")
 
 
 TABLES = {
@@ -65,8 +70,6 @@ def database_url() -> str:
             "DATABASE_URL belum diatur. Contoh: "
             "postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME"
         )
-    # Providers sometimes expose postgres:// or postgresql://. SQLAlchemy's
-    # psycopg dialect works for both sync and async usage when selected explicitly.
     if url.startswith("postgres://"):
         url = "postgresql+psycopg://" + url[len("postgres://"):]
     elif url.startswith("postgresql://"):
@@ -98,7 +101,6 @@ def ensure_schema(engine) -> None:
                     dtype=DTYPES[table],
                 )
 
-        # Helpful indexes for the existing API's common lookups.
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_products_sku "
             "ON products (sku)"
