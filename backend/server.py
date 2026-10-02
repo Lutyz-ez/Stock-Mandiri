@@ -144,7 +144,7 @@ api = APIRouter(prefix="/api")
 
 
 @api.get("/")
-async def root(): return {"message": "Mandiri Sejahtera Inventory API", "storage": "Excel"}
+async def root(): return {"message": "Mandiri Sejahtera Inventory API", "storage": "PostgreSQL"}
 
 
 @api.get("/products")
@@ -537,3 +537,30 @@ async def import_commit(data: BulkProductsIn):
 app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+
+# ---------- PostgreSQL runtime storage ----------
+# This adapter sits below the existing API functions so the frontend contract
+# remains unchanged during the Excel -> PostgreSQL migration.
+from db import get_engine, ensure_schema, read_table, write_tables
+
+DB_ENGINE = get_engine()
+ensure_schema(DB_ENGINE)
+
+
+def read_sheet(name, cols):
+    if name not in ("products", "movements", "sales"):
+        return pd.DataFrame(columns=cols)
+    return read_table(DB_ENGINE, name).reindex(columns=cols).fillna("")
+
+
+def write_book(products, movements, sales):
+    write_tables(DB_ENGINE, {
+        "products": products,
+        "movements": movements,
+        "sales": sales,
+    })
+
+
+# PostgreSQL is now the runtime source of truth. The original Excel helper
+# functions above are retained only as migration-reference code.
